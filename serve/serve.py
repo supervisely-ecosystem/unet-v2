@@ -3,8 +3,10 @@ from pathlib import Path
 import sys
 import tarfile
 import json
+import numpy as np
 import torch
 from torch.nn import DataParallel
+from torch.nn.functional import softmax
 from torchvision.transforms import ToTensor, Normalize, Compose
 import cv2
 import supervisely_lib as sly
@@ -50,7 +52,7 @@ def convert_weights_to_generic_format(model, src_path, dst_path):
         torch.save(model_parallel.module.state_dict(), dst_path)
 
 
-def forward_model(model, model_config, image, apply_softmax=True):
+def predict(device, model, model_config, image):
     original_height, original_width = image.shape[:2]
 
     input_width = model_config["settings"]["input_size"]["width"]
@@ -64,19 +66,27 @@ def forward_model(model, model_config, image, apply_softmax=True):
     ])
     raw_input = input_image_normalizer(resized_image)
 
+    # fake batch dimension required to fit network's input dimensions
+    # model_input = torch.stack([raw_input], 0)  # add dim #0 (batch size 1)
+    model_input = raw_input.unsqueeze(0)
 
-    out_shape = None
-
-    model_input = torch.stack([raw_input], 0)  # add dim #0 (batch size 1)
-    model_input = cuda_variable(model_input, volatile=True)
-
+    model_input = model_input.to(device, torch.float)
     output = model(model_input)
-    if apply_softmax:
-        output = torch_functional.softmax(output, dim=1)
-    output = output.data.cpu().numpy()[0]  # from batch to 3d
+    output = softmax(output, dim=1)
 
+    output = output.data.cpu().numpy()[0]  # from batch to 3d
     pred = np.transpose(output, (1, 2, 0))
-    return sly_image.resize(pred, out_shape)
+    pred = cv2.resize(pred, (original_width, original_height), interpolation=cv2.INTER_CUBIC)
+
+    results = {}
+    pred_classes = np.argmax(pred, axis=2)
+    for class_name, class_index in model_config["class_title_to_idx"].items():
+        predicted_class_pixels = (pred_classes == class_index)
+        mask = predicted_class_pixels.astype(np.uint8) * 255
+        results[class_name] = mask
+    return results
+
+    # return sly_image.resize(pred, out_shape)
 
 
 def main():
@@ -115,9 +125,9 @@ def main():
     # inference on image
     image = cv2.imread(image_path, cv2.IMREAD_COLOR)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-
-
+    results = predict(device, model, model_config, image)
+    for class_name, class_mask in results.items():
+        cv2.imwrite(os.path.join(data_dir, f"{class_name}.png"), class_mask)
 
     # resized_img = cv2.resize(img, self.input_size[::-1])
     # model_input = input_image_normalizer(resized_img)

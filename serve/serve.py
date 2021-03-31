@@ -53,9 +53,7 @@ def convert_weights_to_generic_format(model, src_path, dst_path):
         torch.save(model_parallel.module.state_dict(), dst_path)
 
 
-def predict(device, model, model_config, image):
-    original_height, original_width = image.shape[:2]
-
+def to_model_input(model_config, image):
     input_width = model_config["settings"]["input_size"]["width"]
     input_height = model_config["settings"]["input_size"]["height"]
     input_size = (input_width, input_height)
@@ -70,7 +68,13 @@ def predict(device, model, model_config, image):
     # fake batch dimension required to fit network's input dimensions
     # model_input = torch.stack([raw_input], 0)  # add dim #0 (batch size 1)
     model_input = raw_input.unsqueeze(0)
+    return model_input
 
+
+def predict(device, model, model_config, image):
+    original_height, original_width = image.shape[:2]
+
+    model_input = to_model_input(model_config, image)
     model_input = model_input.to(device, torch.float)
     output = model(model_input)
     output = softmax(output, dim=1)
@@ -102,9 +106,9 @@ def main():
         print(line)
 
     # use one of:
-    # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    device = torch.device('cuda:0')
-    #device = torch.device('cpu')
+    #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    #device = torch.device('cuda:0')
+    device = torch.device('cpu')
 
     # load model input resolution and the list of output classes
     model_config_path = os.path.join(weights_dir, "config.json")
@@ -128,7 +132,7 @@ def main():
     model = construct_unet(n_cls=num_output_classes)
     model.load_state_dict(torch.load(generic_weights_path, map_location=device))
 
-    # model to device and set to evaluation mode
+    # model to device and and set to inference mode
     model.to(device)
     model.eval()
 
@@ -138,6 +142,31 @@ def main():
     results = predict(device, model, model_config, image)
     for class_name, class_mask in results.items():
         cv2.imwrite(os.path.join(data_dir, f"{class_name}.png"), class_mask)
+
+    # convert to ONNX format
+    device = torch.device('cpu')
+    model.to(device)
+    model.eval()
+    onnx_weights_path = os.path.join(weights_dir, "model.onnx")
+    inp = to_model_input(model_config, image)
+    torch.onnx.export(model,
+                      inp,
+                      onnx_weights_path,
+                      opset_version=11,
+                      export_params=True,
+                      do_constant_folding=True,
+                      input_names=['input'],
+                      output_names=['output'],
+                      dynamic_axes={'input': {0: 'batch_size'},  # variable lenght axes
+                                    'output': {0: 'batch_size'}}
+                      )
+
+    # verify onnx model
+    import onnx
+    onnx_model = onnx.load(onnx_weights_path)
+    onnx.checker.check_model(onnx_model)
+
+    # verify onnx model
 
 
 if __name__ == "__main__":

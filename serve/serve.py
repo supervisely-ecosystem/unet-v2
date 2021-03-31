@@ -126,6 +126,8 @@ def main():
     # model can be used both on CPU or GPU
     model = construct_unet(n_cls=num_output_classes)
     model.load_state_dict(torch.load(generic_weights_path, map_location=device))
+
+    # model to device and set to evaluation mode
     model.to(device)
     model.eval()
 

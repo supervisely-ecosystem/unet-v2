@@ -2,10 +2,11 @@ import os
 from pathlib import Path
 import sys
 import tarfile
-
+import json
 import torch
 from torch.nn import DataParallel
-
+from torchvision.transforms import ToTensor, Normalize, Compose
+import cv2
 import supervisely_lib as sly
 
 root_source_path = str(Path(sys.argv[0]).parents[1])
@@ -49,6 +50,35 @@ def convert_weights_to_generic_format(model, src_path, dst_path):
         torch.save(model_parallel.module.state_dict(), dst_path)
 
 
+def forward_model(model, model_config, image, apply_softmax=True):
+    original_height, original_width = image.shape[:2]
+
+    input_width = model_config["settings"]["input_size"]["width"]
+    input_height = model_config["settings"]["input_size"]["height"]
+    input_size = (input_width, input_height)
+    resized_image = cv2.resize(image, input_size)
+
+    input_image_normalizer = Compose([
+        ToTensor(),
+        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    raw_input = input_image_normalizer(resized_image)
+
+
+    out_shape = None
+
+    model_input = torch.stack([raw_input], 0)  # add dim #0 (batch size 1)
+    model_input = cuda_variable(model_input, volatile=True)
+
+    output = model(model_input)
+    if apply_softmax:
+        output = torch_functional.softmax(output, dim=1)
+    output = output.data.cpu().numpy()[0]  # from batch to 3d
+
+    pred = np.transpose(output, (1, 2, 0))
+    return sly_image.resize(pred, out_shape)
+
+
 def main():
     image_path, weights_dir = download_demo()
 
@@ -77,6 +107,28 @@ def main():
 
     model.load_state_dict(torch.load(generic_weights_path, map_location=device))
 
+    # load model input resolution and the list of output classes
+    model_config_path = os.path.join(weights_dir, "config.json")
+    with open(model_config_path) as f:
+        model_config = json.load(f)
+
+    # inference on image
+    image = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+
+
+
+    # resized_img = cv2.resize(img, self.input_size[::-1])
+    # model_input = input_image_normalizer(resized_img)
+    # # sum(pixelwise_probas_array[0, 0, :]) == 1
+    # pixelwise_probas_array = pytorch_inference.infer_per_pixel_scores_single_image(
+    #     self.model, model_input, img.shape[:2])
+    # labels = raw_to_labels.segmentation_array_to_sly_bitmaps(
+    #     self.out_class_mapping, np.argmax(pixelwise_probas_array, axis=2))
+    # pixelwise_scores_labels = raw_to_labels.segmentation_scores_to_per_class_labels(
+    #     self.out_class_mapping, pixelwise_probas_array)
+    # return Annotation(ann.img_size, labels=labels, pixelwise_scores_labels=pixelwise_scores_labels)
 
 if __name__ == "__main__":
     main()

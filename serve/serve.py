@@ -76,8 +76,8 @@ def predict(device, model, model_config, image):
 
     model_input = to_model_input(model_config, image)
     model_input = model_input.to(device, torch.float)
-    output = model(model_input)
-    output = softmax(output, dim=1)
+    output_raw = model(model_input)
+    output = softmax(output_raw, dim=1)
 
     output = output.data.cpu().numpy()[0]  # from batch to 3d
     pred = np.transpose(output, (1, 2, 0))
@@ -89,7 +89,7 @@ def predict(device, model, model_config, image):
         predicted_class_pixels = (pred_classes == class_index)
         mask = predicted_class_pixels.astype(np.uint8) * 255
         results[class_name] = mask
-    return results
+    return results, output_raw
 
 
 def main():
@@ -139,7 +139,7 @@ def main():
     # inference on image
     image = cv2.imread(image_path, cv2.IMREAD_COLOR)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    results = predict(device, model, model_config, image)
+    results, output_model_raw = predict(device, model, model_config, image)
     for class_name, class_mask in results.items():
         cv2.imwrite(os.path.join(data_dir, f"{class_name}.png"), class_mask)
 
@@ -148,25 +148,40 @@ def main():
     model.to(device)
     model.eval()
     onnx_weights_path = os.path.join(weights_dir, "model.onnx")
-    inp = to_model_input(model_config, image)
-    torch.onnx.export(model,
-                      inp,
-                      onnx_weights_path,
-                      opset_version=11,
-                      export_params=True,
-                      do_constant_folding=True,
-                      input_names=['input'],
-                      output_names=['output'],
-                      dynamic_axes={'input': {0: 'batch_size'},  # variable lenght axes
-                                    'output': {0: 'batch_size'}}
-                      )
+    sly.fs.silent_remove(onnx_weights_path)
+    if sly.fs.file_exists(onnx_weights_path) is False:
+        inp = to_model_input(model_config, image)
+        torch.onnx.export(model,
+                          inp,
+                          onnx_weights_path,
+                          opset_version=11,
+                          export_params=True,
+                          do_constant_folding=True,
+                          input_names=['input'],
+                          output_names=['output'],
+                          dynamic_axes={'input': {0: 'batch_size'},  # variable lenght axes
+                                        'output': {0: 'batch_size'}}
+                          )
 
-    # verify onnx model
-    import onnx
-    onnx_model = onnx.load(onnx_weights_path)
-    onnx.checker.check_model(onnx_model)
+        # verify onnx model
+        import onnx
+        onnx_model = onnx.load(onnx_weights_path)
+        onnx.checker.check_model(onnx_model)
 
-    # verify onnx model
+        # test onnx model
+        import onnxruntime
+        ort_session = onnxruntime.InferenceSession(onnx_weights_path)
+
+        def to_numpy(tensor):
+            return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
+
+        # compute ONNX Runtime output prediction
+        x = to_model_input(model_config, image)
+        ort_inputs = {ort_session.get_inputs()[0].name: to_numpy(x)}
+        ort_outs = ort_session.run(None, ort_inputs)
+
+        # compare ONNX Runtime and PyTorch results
+        np.testing.assert_allclose(to_numpy(output_model_raw), ort_outs[0], rtol=1e-03, atol=1e-05)
 
 
 if __name__ == "__main__":

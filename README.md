@@ -1,7 +1,7 @@
 # unet-v2: how-to inference + generic weights for CPU + ONNX weights
 
 
-Run ./serve/serve.py
+## 🔥 Run ./serve/serve.py
 
 1. download demo image and demo model weights (model was trained in Supervisely on lemons dataset)
 2. transform original model weights (Data parallel) to generic weights 

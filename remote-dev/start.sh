@@ -5,5 +5,6 @@
 # -v ~/max:/workdir
 
 cp /root/.ssh/authorized_keys . && \
+docker-compose build && \
 docker-compose up -d && \
 docker-compose ps

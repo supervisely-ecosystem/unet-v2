@@ -48,7 +48,8 @@ def download_demo():
 def convert_weights_to_generic_format(model, src_path, dst_path):
     weights = torch.load(src_path)
     if list(weights.keys())[0].startswith('module.'):
-        model_parallel = DataParallel(model).cuda()
+        model_parallel = DataParallel(model)
+        model_parallel.load_state_dict(weights)
         torch.save(model_parallel.module.state_dict(), dst_path)
 
 

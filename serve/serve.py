@@ -40,6 +40,7 @@ def download_demo():
     return image_path, weights_dir
 
 
+# works on torch with cuda support
 def load_model(weights_path, device="0"):
     model = construct_unet(n_cls=3)
     model = DataParallel(model).cuda()

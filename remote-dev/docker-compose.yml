@@ -6,7 +6,8 @@ services:
     build: 
       context: .
       args:
-        IMAGE: supervisely/base-pytorch:6.0.21
+#        IMAGE: supervisely/base-pytorch:6.0.21
+        IMAGE: supervisely/base-py:6.1.4
     ports:
       - "7777:22"
     volumes:

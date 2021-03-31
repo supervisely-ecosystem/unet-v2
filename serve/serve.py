@@ -148,7 +148,7 @@ def main():
     model.to(device)
     model.eval()
     onnx_weights_path = os.path.join(weights_dir, "model.onnx")
-    sly.fs.silent_remove(onnx_weights_path) # ONLY FOR DEBUG
+    #sly.fs.silent_remove(onnx_weights_path) # ONLY FOR DEBUG
     if sly.fs.file_exists(onnx_weights_path) is False:
         inp = to_model_input(model_config, image)
         torch.onnx.export(model,
@@ -183,19 +183,19 @@ def main():
         # compare ONNX Runtime and PyTorch results
         np.testing.assert_allclose(to_numpy(output_model_raw), ort_outs[0], rtol=1e-03, atol=1e-05)
 
-        # ONLY FOR DEBUG
-        # it raises error - it's ok!! (test that assert_allclose works)
-        error_image_url = "https://github.com/supervisely-ecosystem/unet-v2/releases/download/v0.2/test_onnx_raise.jpeg"
-        error_image_path = os.path.join(data_dir, sly.fs.get_file_name_with_ext(error_image_url))
-        if sly.fs.file_exists(error_image_path) is False:
-            sly.fs.download(error_image_url, error_image_path)
-        error_image = cv2.imread(error_image_path, cv2.IMREAD_COLOR)
-        error_image = cv2.cvtColor(error_image, cv2.COLOR_BGR2RGB)
-        error_x = to_model_input(model_config, error_image)
-        error_ort_inputs = {ort_session.get_inputs()[0].name: to_numpy(error_x)}
-        error_ort_outs = ort_session.run(None, error_ort_inputs)
-        # have to raise error (if raises error -> OK)
-        np.testing.assert_allclose(to_numpy(output_model_raw), error_ort_outs[0], rtol=1e-03, atol=1e-05)
+        # # ONLY FOR DEBUG
+        # # it raises error - it's ok!! (test that assert_allclose works)
+        # error_image_url = "https://github.com/supervisely-ecosystem/unet-v2/releases/download/v0.2/test_onnx_raise.jpeg"
+        # error_image_path = os.path.join(data_dir, sly.fs.get_file_name_with_ext(error_image_url))
+        # if sly.fs.file_exists(error_image_path) is False:
+        #     sly.fs.download(error_image_url, error_image_path)
+        # error_image = cv2.imread(error_image_path, cv2.IMREAD_COLOR)
+        # error_image = cv2.cvtColor(error_image, cv2.COLOR_BGR2RGB)
+        # error_x = to_model_input(model_config, error_image)
+        # error_ort_inputs = {ort_session.get_inputs()[0].name: to_numpy(error_x)}
+        # error_ort_outs = ort_session.run(None, error_ort_inputs)
+        # # have to raise error (if raises error -> OK)
+        # np.testing.assert_allclose(to_numpy(output_model_raw), error_ort_outs[0], rtol=1e-03, atol=1e-05)
 
 
 

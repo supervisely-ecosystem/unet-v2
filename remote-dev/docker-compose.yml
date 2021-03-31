@@ -1,0 +1,13 @@
+version: "2.2"
+services:
+  devssh:
+    shm_size: '2gb'
+    runtime: nvidia
+    build: 
+      context: .
+      args:
+        IMAGE: supervisely/base-pytorch:6.0.21
+    ports:
+      - "7777:22"
+    volumes:
+      - "./data:/data"

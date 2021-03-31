@@ -14,7 +14,6 @@ sys.path.append(root_source_path)
 
 data_dir = os.path.join(root_source_path, "data")
 
-import unet
 from unet import construct_unet
 from utils import tree
 
@@ -28,7 +27,7 @@ def download_demo():
     weights_tar_url = "https://github.com/supervisely-ecosystem/unet-v2/releases/download/v0.1/unet-lemon-kiwi.tar"
     weights_path = os.path.join(data_dir, sly.fs.get_file_name_with_ext(weights_tar_url))
     if sly.fs.file_exists(weights_path) is False:
-        progress = sly.Progress("Downloading weights", 1, is_size=True, need_info_log=True)
+        progress = sly.Progress("Downloading weights", 1, is_size=True)
         sly.fs.download(weights_tar_url, weights_path, progress=progress)
 
     weights_dir = os.path.join(data_dir, sly.fs.get_file_name(weights_tar_url))
@@ -40,14 +39,14 @@ def download_demo():
     return image_path, weights_dir
 
 
-# works on torch with cuda support
-def load_model(weights_path, device="0"):
-    model = construct_unet(n_cls=3)
-    model = DataParallel(model).cuda()
-    device = torch.device(device)
-    model.load_state_dict(torch.load(weights_path, map_location=device))
-    model.eval()
-    return model
+# UNet plugin saves model weights as DataParallel
+# if you want to use model not only on GPU but also on CPU => convert weights
+# https://pytorch.org/tutorials/recipes/recipes/save_load_across_devices.html#saving-torch-nn-dataparallel-models
+def convert_weights_to_generic_format(model, src_path, dst_path):
+    weights = torch.load(src_path)
+    if list(weights.keys())[0].startswith('module.'):
+        model_parallel = DataParallel(model).cuda()
+        torch.save(model_parallel.module.state_dict(), dst_path)
 
 
 def main():
@@ -63,16 +62,21 @@ def main():
     for line in tree(Path(weights_dir)):
         print(line)
 
+    model = construct_unet(n_cls=3)
 
-    #load_model(device="0")
-    # or
+    # convert weights from DataParallel to generic format
     weights_path = os.path.join(weights_dir, "model.pt")
-    load_model(weights_path, device="cpu")
+    generic_weights_path = os.path.join(weights_dir, "generic_model.pt")
+    if sly.fs.file_exists(generic_weights_path) is False:
+        convert_weights_to_generic_format(model, weights_path, generic_weights_path)
 
+    # use one of:
+    #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    #device = torch.device('cuda:0')
+    device = torch.device('cpu')
 
-    # weights directory should contain
-    #weights_dir contains the following files:
+    model.load_state_dict(torch.load(generic_weights_path, map_location=device))
+
 
 if __name__ == "__main__":
-    #sly.main_wrapper("main", main)
     main()

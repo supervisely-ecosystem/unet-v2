@@ -47,6 +47,8 @@ def download_demo():
 # https://pytorch.org/tutorials/recipes/recipes/save_load_across_devices.html#saving-torch-nn-dataparallel-models
 def convert_weights_to_generic_format(model, src_path, dst_path):
     weights = torch.load(src_path)
+    # for macbook
+    # weights = torch.load(src_path, map_location=torch.device('cpu'))
     if list(weights.keys())[0].startswith('module.'):
         model_parallel = DataParallel(model)
         model_parallel.load_state_dict(weights)

@@ -2,6 +2,9 @@
 # backup
 # pip install torch==1.7.1+cu110 torchvision==0.8.2+cu110 -f https://download.pytorch.org/whl/torch_stable.html
 
+# for macbook
+# pip install torch==1.7.1 torchvision==0.8.2 -f https://download.pytorch.org/whl/torch_stable.html
+
 supervisely==6.1.59
 
 -f https://download.pytorch.org/whl/torch_stable.html
